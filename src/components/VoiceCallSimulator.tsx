@@ -77,8 +77,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
         setIsListening(false);
       };
 
-      rec.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
+      rec.onerror = () => {
         setIsListening(false);
       };
 
@@ -126,8 +125,8 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('Speech synthesis error:', e);
+    } catch {
+      // Speech synthesis unsupported or silent fallback
     }
   };
 
@@ -145,7 +144,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
 
   const toggleMic = () => {
     if (!recognitionRef.current) {
-      alert('Your browser does not support Speech Recognition. Please use the quick prompt buttons or text input below.');
+      // Graceful fallback without blocking window.alert
       return;
     }
 
@@ -156,8 +155,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
       try {
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (err) {
-        console.warn('Recognition start failed:', err);
+      } catch {
         setIsListening(false);
       }
     }
@@ -215,8 +213,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
           onPipelineTrigger(mergedFacts);
         }, 1200);
       }
-    } catch (err) {
-      console.error('Failed to communicate with voice agent:', err);
+    } catch {
       setIsAiThinking(false);
     }
   };

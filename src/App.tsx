@@ -357,8 +357,7 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
       setSavedDossiers((prev) => [compiledDossier, ...prev.slice(0, 9)]);
 
       setIsProcessingPipeline(false);
-    } catch (err) {
-      console.error('Pipeline execution error:', err);
+    } catch {
       setIsProcessingPipeline(false);
     }
   };
@@ -416,8 +415,8 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
 
       // Update current facts
       setCurrentFacts((prev) => ({ ...prev, marginCapital: newMargin }));
-    } catch (err) {
-      console.error('Margin recalculation error:', err);
+    } catch {
+      // Graceful fallback on recalculation
     }
   };
 

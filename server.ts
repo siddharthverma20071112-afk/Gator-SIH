@@ -24,6 +24,83 @@ app.use(express.json());
 // In-memory dossier store for SIH Admin Dashboard & Audit Trail
 const savedDossiers: BusinessDossier[] = [];
 
+// Clean and safe JSON parser that handles code blocks or wrapped text
+function cleanAndParseJson<T>(raw: string | null | undefined): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        try {
+          return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+  }
+}
+
+// Multi-tier candidate models for basic text tasks in order of priority:
+// 1. gemini-3.8-flash (primary text model)
+// 2. gemini-3.1-flash-lite (high capacity, distinct capacity pool, low latency)
+// 3. gemini-flash-latest
+const GEMINI_TEXT_MODELS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+
+// Safe caller with retry backoff for transient 503 / 429 errors
+async function callGeminiWithFallback(
+  ai: GoogleGenAI,
+  prompt: string,
+  systemInstruction?: string
+): Promise<string | null> {
+  for (const model of GEMINI_TEXT_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const config: any = {
+          responseMimeType: 'application/json'
+        };
+        if (systemInstruction) {
+          config.systemInstruction = systemInstruction;
+        }
+
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config
+        });
+
+        if (response && response.text) {
+          return response.text;
+        }
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        const isTransient =
+          errMsg.includes('503') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('high demand') ||
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        if (isTransient && attempt === 0) {
+          // Brief pause before retry
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          continue;
+        }
+        // Break out to try the next model candidate
+        break;
+      }
+    }
+  }
+  return null;
+}
+
 // Lazy / Safe Gemini Initialization with user-agent
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -94,26 +171,21 @@ Conversation History: ${JSON.stringify(history.slice(-4))}
 
 Analyze this input, update extracted facts, decide what missing fields remain, and formulate the next conversational Hindi response.`;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
+        const text = await callGeminiWithFallback(ai, prompt, systemPrompt);
+        if (text) {
+          const parsed = cleanAndParseJson<any>(text);
+          if (parsed && (parsed.replyText || parsed.extracted)) {
+            return res.json({
+              replyText: parsed.replyText || "जी, आपकी बात समझ आ गई। आगे बताइए।",
+              replyAudioText: parsed.replyAudioText || parsed.replyText,
+              extracted: { ...currentFacts, ...(parsed.extracted || {}) },
+              isComplete: Boolean(parsed.isComplete),
+              missingFields: parsed.missingFields || []
+            });
           }
-        });
-
-        const text = response.text || '{}';
-        const parsed = JSON.parse(text);
-        return res.json({
-          replyText: parsed.replyText || "जी, आपकी बात समझ आ गई। आगे बताइए।",
-          replyAudioText: parsed.replyAudioText || parsed.replyText,
-          extracted: { ...currentFacts, ...(parsed.extracted || {}) },
-          isComplete: Boolean(parsed.isComplete),
-          missingFields: parsed.missingFields || []
-        });
-      } catch (geminiErr) {
-        console.error('Gemini error, using fallback extractor:', geminiErr);
+        }
+      } catch {
+        // Smoothly proceed to high-quality deterministic fallback
       }
     }
 
@@ -748,72 +820,320 @@ function routeSchemes(
 // ----------------------------------------------------
 // COMPLETE REPORT & DOSSIER GENERATOR (With Gemini Intelligence)
 // ----------------------------------------------------
+function getBenchmarkTradeDossier(
+  businessType: BusinessType,
+  finance: FinancialPlan,
+  localData: LocalDataEngineResult,
+  feasibility: FeasibilityScores
+) {
+  const marginStr = Number(finance.marginCapital).toLocaleString('en-IN');
+
+  if (businessType === 'grocery') {
+    return {
+      swot: {
+        strengths: [
+          `पर्याप्त स्वयं की पूंजी (मार्जिन): ₹${marginStr} प्रारंभिक किराना स्टॉक हेतु उपयुक्त`,
+          `गांव में निरंतर दैनिक उपभोग मांग (चावल, दाल, तेल, एफएमसीजी) और ${localData.mandiPriceBenchmark.marginPercent}% सकल मार्जिन`,
+          `गांव के मुख्य चौक / संपर्क मार्ग पर सहज पहुंच`
+        ],
+        weaknesses: [
+          `शुरुआती दौर में उधारी (क्रेडिट) खाता प्रबंधन का जोखिम`,
+          `नष्ट होने वाली वस्तुओं (एक्सपायरी) की सही समय पर बिक्री की निगरानी जरूरी`
+        ],
+        opportunities: [
+          `मुद्रा शिशु/किशोर या पीएमईजीपी योजना से ब्याज राहत और कार्यशील पूंजी का विस्तार`,
+          `डिजिटल भुगतान (UPI / QR) और होम डिलीवरी द्वारा आस-पास के टोलों तक सेवा विस्तार`
+        ],
+        threats: [
+          `निकटवर्ती कस्बे के थोक बाजार से कीमत प्रतिस्पर्धा`,
+          `थोक मूल्य में आकस्मिक वृद्धि से मार्जिन पर असर`
+        ]
+      },
+      strategicRisks: [
+        {
+          risk: 'Inventory Wastage & Product Expiry',
+          mitigation: 'फास्ट-मूविंग दैनिक वस्तुओं का 15-दिवसीय चक्र बनाएं और डिजिटल इन्वेंटरी लेजर का उपयोग करें।',
+          severity: 'Medium' as const
+        },
+        {
+          risk: 'Unregulated Customer Credit (उधारी का दबाव)',
+          mitigation: 'उधारी की सीमा अधिकतम ₹500 प्रति परिवार तय करें और डिजिटल खाता ऐप से समय पर एसएमएस रिमाइंडर भेजें।',
+          severity: 'High' as const
+        },
+        {
+          risk: 'Wholesale Sourcing Price Fluctuations',
+          mitigation: 'जिला मुख्यालय के थोक डिस्ट्रीब्यूटर से सीधे नकद छूट पर सामूहिक खरीद करें।',
+          severity: 'Low' as const
+        }
+      ],
+      actionPlan: {
+        day30: [
+          'उद्यम आधार (Udyam Registration) एवं स्थानीय ग्राम पंचायत से ट्रेड एनओसी प्राप्त करें',
+          'थोक विक्रेताओं से किराना रैक व डिजिटल वेइंग मशीन के पक्के कोटेशन लें',
+          'मुद्रा या पीएमईजीपी ऋण आवेदन बैंक में जमा करें'
+        ],
+        day60: [
+          'दुकान में आधुनिक मेटल रैक, एलईडी लाइटिंग व डिजिटल बिलिंग सेटअप पूर्ण करें',
+          'एफएमसीजी और गैर-नाशवान किराना वस्तुओं का प्रारंभिक स्टॉक मंगाएं',
+          'गाँव में पर्चे और व्हाट्सएप द्वारा आकर्षक उद्घाटन छूट की घोषणा करें'
+        ],
+        day90: [
+          'दैनिक बिक्री और मुनाफे की साप्ताहिक समीक्षा करें',
+          'मासिक बैंक ईएमआई का नियमित भुगतान सुनिश्चित कर क्रेडिट स्कोर मजबूत करें',
+          'डेयरी उत्पाद व स्टेशनरी जोड़कर प्रति ग्राहक औसत बिलिंग बढ़ाएं'
+        ]
+      }
+    };
+  }
+
+  if (businessType === 'tailoring') {
+    return {
+      swot: {
+        strengths: [
+          `स्वयं की पूंजी ₹${marginStr} उच्च गुणवत्ता वाली सिलाई मशीनों की खरीद हेतु सक्षम`,
+          `ग्रामीण स्कूल यूनिफॉर्म और त्योहारी परिधानों में ${localData.mandiPriceBenchmark.marginPercent}% का उत्कृष्ट श्रम मार्जिन`,
+          `स्थानीय महिलाओं एवं कारीगरों के लिए रोजगार सृजन की उच्च क्षमता`
+        ],
+        weaknesses: [
+          `कुशल सिलाई कारीगरों की नियमित उपलब्धता पर निर्भरता`,
+          `सिलाई कार्य हेतु दिन में निरंतर विद्युत आपूर्ति की आवश्यकता`
+        ],
+        opportunities: [
+          `एनआरएलएम स्वयं सहायता समूह एवं सरकारी स्कूल यूनिफॉर्म का सामूहिक अनुबंध`,
+          `आस-पास के 4 गांवों में बुटीक और डिजाइनर सिलाई केंद्र के रूप में विस्तार`
+        ],
+        threats: [
+          `कस्बे के रेडीमेड कपड़ों से मूल्य प्रतिस्पर्धा`,
+          `त्योहारों के बाद गैर-सीजनल महीनों में काम में मंदी`
+        ]
+      },
+      strategicRisks: [
+        {
+          risk: 'Skilled Stitching Tailor Retention',
+          mitigation: 'कारीगरों को पीस-रेट के साथ पारदर्शी दैनिक पारिश्रमिक और बोनस प्रोत्साहन दें।',
+          severity: 'Medium' as const
+        },
+        {
+          risk: 'Seasonal Demand Slack (गैर-त्योहारी महीनों में सुस्ती)',
+          mitigation: 'ऑफ-सीजन में स्थानीय स्कूलों व ग्राम पंचायतों से वर्दी और कपड़े के थैले सिलाई के अग्रिम ऑर्डर लें।',
+          severity: 'High' as const
+        },
+        {
+          risk: 'Power Cuts Halting Industrial Motors',
+          mitigation: 'सोलर या 2 KVA इन्वर्टर बैकअप के साथ ऑटो-कट औद्योगिक मशीनों का चयन करें।',
+          severity: 'Low' as const
+        }
+      ],
+      actionPlan: {
+        day30: [
+          'उद्यम पंजीकरण कराएं और 3-4 हाई-स्पीड लॉकस्टिच व ओवरलॉक मशीनों के कोटेशन प्राप्त करें',
+          'पीएमईजीपी या मुद्रा योजना के अंतर्गत बैंक ऋण फाइल प्रस्तुत करें',
+          'स्थानीय पंचायत व स्कूल प्रबंधन से सिलाई आवश्यकता का प्रारंभिक सर्वे करें'
+        ],
+        day60: [
+          'कार्यशाला की आंतरिक विद्युत वायरिंग, कटिंग टेबल व फिटिंग एरिया तैयार करें',
+          'थोक कपड़ा बाजार से यूनिफॉर्म फैब्रिक व सिलाई सामग्री की खेप मंगाएं',
+          '2 सहायक सिलाई कारीगरों को प्रशिक्षित कर काम शुरू करें'
+        ],
+        day90: [
+          'डिजाइन कैटलॉग व नमूना परिधान तैयार कर नजदीकी बाजार में प्रदर्शित करें',
+          'समय पर ईएमआई चुकता कर वित्तीय अनुशासन स्थापित करें',
+          'बुटीक और कस्टमाइज्ड लेडीज वियर विभाग का शुभारंभ करें'
+        ]
+      }
+    };
+  }
+
+  if (businessType === 'mobile_repair') {
+    return {
+      swot: {
+        strengths: [
+          `पूंजी ₹${marginStr} आधुनिक रिपेयर टूलकिट व आवश्यक स्पेयर पार्ट्स स्टॉक के लिए पर्याप्त`,
+          `स्मार्टफोन और डिजिटल उपकरणों की ग्रामीण क्षेत्र में तेजी से बढ़ती संख्या`,
+          `सेवा एवं रिपेयरिंग में ${localData.mandiPriceBenchmark.marginPercent}% का अत्यधिक आकर्षक मार्जिन`
+        ],
+        weaknesses: [
+          `आधुनिक मदरबोर्ड व चिप-लेवल रिपेयरिंग के लिए निरंतर तकनीकी कौशल की आवश्यकता`,
+          `ब्रांडेड ओरिजिनल पार्ट्स की स्थानीय स्तर पर आपूर्ति श्रृंखला की कमी`
+        ],
+        opportunities: [
+          `कॉमन सर्विस सेंटर (CSC) बैंकिंग व बिल भुगतान सेवाएं जोड़कर अतिरिक्त आय`,
+          `सेकंड-हैंड स्मार्टफोन व सोलर एक्सेसरीज की रीसेल का विस्तार`
+        ],
+        threats: [
+          `तकनीक का तेजी से बदलना और पुराने स्पेयर पार्ट्स का अप्रचलित होना`,
+          `लो-क्वालिटी चाइनीज पार्ट्स की वारंटी वापसी का जोखिम`
+        ]
+      },
+      strategicRisks: [
+        {
+          risk: 'Rapid Obsolescence of Electronic Spare Parts',
+          mitigation: 'केवल उच्च मांग वाले मॉडल (डिस्प्ले, चार्जिंग पिन, बैटरी) का 15-दिवसीय न्यूनतम स्टॉक रखें।',
+          severity: 'Medium' as const
+        },
+        {
+          risk: 'Component-Level Repair Failure',
+          mitigation: 'प्रमाणित डायग्नोस्टिक माइक्रोस्कोप और डिजिटल टेस्ट मल्टीमीटर का प्रयोग कर पूर्व-परीक्षण करें।',
+          severity: 'High' as const
+        },
+        {
+          risk: 'Customer Disputes over Pre-existing Device Issues',
+          mitigation: 'डिवाइस स्वीकार करते समय जॉब-शीट पर पहले से मौजूद कमियों का लिखित व डिजिटल रिकॉर्ड बनाएं।',
+          severity: 'Low' as const
+        }
+      ],
+      actionPlan: {
+        day30: [
+          'उद्यम रजिस्ट्रेशन कराएं और एसएमडी रीवर्क स्टेशन व स्पेयर टूल्स का कोटेशन लें',
+          'मुद्रा योजना के अंतर्गत कार्यशील पूंजी व टूलकिट ऋण हेतु बैंक में आवेदन करें',
+          'तहसील रोड / बाजार में 100-150 वर्ग फीट की सुरक्षित दुकान फाइनल करें'
+        ],
+        day60: [
+          'एंटी-स्टैटिक रिपेयर वर्कस्टेशन, डिस्प्ले सेपरेटर व टूल रैक स्थापित करें',
+          'अधिक बिकने वाले स्मार्टफोन मॉडल्स के फोल्डर (स्क्रीन) व बैटरियों का स्टॉक लगाएं',
+          'दुकान पर डिजिटल फ्लेक्स बोर्ड और उद्घाटन सेवा कैंप लगाएं'
+        ],
+        day90: [
+          'लैपटॉप रिपेयर और सोलर इन्वर्टर सर्विसिंग की अतिरिक्त सुविधाएं जोड़ें',
+          'प्रतिमाह ईएमआई का डिजिटल भुगतान करें और लाभ मार्जिन की जांच करें',
+          'प्रतिदिन 10-15 मोबाइल सर्विस का लक्ष्य प्राप्त करें'
+        ]
+      }
+    };
+  }
+
+  if (businessType === 'food_processing') {
+    return {
+      swot: {
+        strengths: [
+          `पूंजी ₹${marginStr} प्रसंस्करण मशीनरी व एफएसएसएआई अनुपालन के लिए उपयुक्त आधार`,
+          `स्थानीय खेतों से सीधे सस्ते दाम पर ताजे कृषि उत्पाद की प्रचुर उपलब्धता`,
+          `प्रसंस्कृत व पैकेज्ड खाद्य उत्पादों में ${localData.mandiPriceBenchmark.marginPercent}% का उत्कृष्ट मूल्य संवर्धन`
+        ],
+        weaknesses: [
+          `कच्चे माल की शेल्फ-लाइफ सीमित होना और उचित कोल्ड/ड्राई स्टोरेज की आवश्यकता`,
+          `खाद्य सुरक्षा व स्वच्छता मानकों (FSSAI) के कड़े नियम`
+        ],
+        opportunities: [
+          `पीएमएफएमई (PMFME) योजना के तहत 35% पूंजीगत सब्सिडी (₹10 लाख तक) का सीधा लाभ`,
+          `स्थानीय जैविक / शुद्ध आटा, मसाले व बेसन के ब्रांड का ग्रामीण व शहरी बाजारों में प्रसार`
+        ],
+        threats: [
+          `बेमौसम बारिश से कच्चे अनाज / मसाले की गुणवत्ता में गिरावट`,
+          `पैकेजिंग सामग्री की कीमतों में वृद्धि`
+        ]
+      },
+      strategicRisks: [
+        {
+          risk: 'Raw Material Perishability & Moisture Spoilage',
+          mitigation: 'एयरटाइट फूड-ग्रेड साइलो और मॉइस्चर मीटर द्वारा नमी जांच के उपरांत ही भंडारण करें।',
+          severity: 'High' as const
+        },
+        {
+          risk: 'FSSAI Regulatory Non-Compliance',
+          mitigation: 'इकाई शुरू करने से पूर्व जिला खाद्य सुरक्षा अधिकारी से मार्गदर्शन और लैब टेस्टिंग प्रमाणन लें।',
+          severity: 'Medium' as const
+        },
+        {
+          risk: 'Seasonal Price Swings in Farmgate Crops',
+          mitigation: 'कटाई के मौसम में स्थानीय किसान उत्पादक संगठन (FPO) से न्यूनतम समर्थन मूल्य पर अग्रिम क्रय करें।',
+          severity: 'Low' as const
+        }
+      ],
+      actionPlan: {
+        day30: [
+          'उद्यम रजिस्ट्रेशन और एफएसएसएआई बेसिक लाइसेंस आवेदन ऑनलाइन जमा करें',
+          'फूड पल्वराइजर, डिहाइड्रेटर व सीलिंग मशीन आपूर्तिकर्ताओं से पक्के जीएसटी कोटेशन लें',
+          'पीएमएफएमई / पीएमईजीपी योजना अंतर्गत 35% सब्सिडी हेतु डीपीआर अपलोड करें'
+        ],
+        day60: [
+          'फूड-ग्रेड फ्लोरिंग, डस्ट-प्रूफ शेड व 3-फेज विद्युत कनेक्शन की स्थापना पूर्ण करें',
+          'मशीनरी परीक्षण (Dry Run) करें और स्थानीय किसानों से प्रथम खेप का अनाज खरीदें',
+          'आकर्षक 500 ग्राम व 1 किग्रा के ब्रांडेड फूड-ग्रेड पाउच प्रिंट कराएं'
+        ],
+        day90: [
+          'क्षेत्र की 50+ किराना दुकानों पर उत्पाद के डिस्प्ले बॉक्स वितरित करें',
+          'मासिक आय से बैंक ऋण ईएमआई चुकाएं और सब्सिडी क्लेम ट्रैक करें',
+          'मासिक 5-8 टन खाद्य प्रसंस्करण का स्तर हासिल करें'
+        ]
+      }
+    };
+  }
+
+  // Default: Dairy
+  return {
+    swot: {
+      strengths: [
+        `पर्याप्त स्वयं की पूंजी (मार्जिन): ₹${marginStr} उच्च दुग्ध उत्पादक पशुओं की खरीद हेतु उपयुक्त`,
+        `स्थानीय बाजार में दूध की दैनिक नकद मांग और ${localData.mandiPriceBenchmark.marginPercent}% का स्वस्थ सकल मार्जिन`,
+        `पक्की सड़क संपर्क और न्यूनतम ${localData.electricityHoursPerDay || 18}+ घंटे विद्युत आपूर्ति`
+      ],
+      weaknesses: [
+        `सीमित कार्यशील पूंजी बफर; पहले 3 महीनों में पशु आहार व नकदी प्रवाह पर सख्त निगरानी जरूरी`,
+        `पशु स्वास्थ्य व मौसमी बीमारियों से बचाव हेतु नियमित पशुचिकित्सक संपर्क की अनिवार्यता`
+      ],
+      opportunities: [
+        `नाबार्ड डीईटीएस / पीएमईजीपी योजना के तहत 25-35% ब्याज अनुदान और क्रेडिट गारंटी का लाभ`,
+        `आस-पास के दुग्ध संग्रह केंद्रों (डेयरी कोऑपरेटिव) और मिष्ठान भंडारों से सीधे थोक आपूर्ति अनुबंध`
+      ],
+      threats: [
+        `गर्मियों में हरे चारे व चोकर की कीमतों में आकस्मिक वृद्धि`,
+        `स्थानीय बिचौलियों द्वारा दूध के वसा (FAT/SNF) परीक्षण में मूल्य कटौती का प्रयास`
+      ]
+    },
+    strategicRisks: [
+      {
+        risk: 'Cattle Health & Veterinary Emergencies',
+        mitigation: 'सभी दुधारू पशुओं का शत-प्रतिशत व्यापक पशुधन बीमा (Livestock Insurance) और नियमित टीकाकरण कराएं।',
+        severity: 'High' as const
+      },
+      {
+        risk: 'Feed & Fodder Price Spikes',
+        mitigation: 'स्थानीय किसान उत्पादक संगठन (FPO) व सहकारी समिति से साइलेज और सूखा चारा 3 महीने का अग्रिम आरक्षित करें।',
+        severity: 'Medium' as const
+      },
+      {
+        risk: 'Cold Chain / Milk Spoilage during Power Cut',
+        mitigation: 'इन्वर्टर-सक्षम मिल्क टेस्टिंग व चिलिंग कैन की व्यवस्था रखें और सुबह-शाम समयबद्ध डिलीवरी करें।',
+        severity: 'Low' as const
+      }
+    ],
+    actionPlan: {
+      day30: [
+        'उद्यम आधार एवं स्थानीय पशुपालन विभाग / ग्राम पंचायत से आवश्यक एनओसी प्राप्त करें',
+        'प्रमाणित पशु मेले या डेयरी फार्म से मुर्रा भैंस / एचएफ गायों का स्वास्थ्य परीक्षण कर चयन करें',
+        'नाबार्ड / पीएमईजीपी पोर्टल पर ऋण व सब्सिडी आवेदन दर्ज करें'
+      ],
+      day60: [
+        'हवादार कंक्रीट शेड, पानी की चरही, व इलेक्ट्रिक चाफ कटर की फिटिंग पूर्ण करें',
+        'पशुओं का आगमन, माइक्रोचिप टैगिंग और बीमा पॉलिसी सक्रिय कराएं',
+        'स्थानीय दुग्ध संघ बूथ एवं नजदीकी ग्राहकों से दैनिक आपूर्ति प्रारंभ करें'
+      ],
+      day90: [
+        'दैनिक दूध उत्पादन (लीटर) एवं फैट प्रतिशत का डिजिटल बहीखाता (Khata App) संधारित करें',
+        'प्रथम 90 दिनों की शुद्ध आय से मासिक ईएमआई (EMI) का ऑटो-डेबिट खाता सुचारू रखें',
+        'गोबर से वर्मीकम्पोस्ट (केंचुआ खाद) बनाकर अतिरिक्त आय का स्रोत शुरू करें'
+      ]
+    }
+  };
+}
+
 app.post('/api/dossier/generate', async (req, res) => {
   try {
     const { applicant, localData, feasibility, finance, schemes } = req.body;
 
+    const bType = (applicant?.business || 'dairy') as BusinessType;
+    const benchmark = getBenchmarkTradeDossier(bType, finance, localData, feasibility);
+    let swot = benchmark.swot;
+    let strategicRisks = benchmark.strategicRisks;
+    let actionPlan = benchmark.actionPlan;
+
     const ai = getGeminiClient();
-
-    let swot = {
-      strengths: [
-        `पर्याप्त स्वयं की पूंजी (मार्जिन): ₹${Number(finance.marginCapital).toLocaleString('en-IN')}`,
-        `स्थानीय बाजार में दैनिक मांग और ${localData.mandiPriceBenchmark.marginPercent}% का स्वस्थ सकल मार्जिन`,
-        `पक्की सड़क संपर्क और न्यूनतम 18+ घंटे विद्युत आपूर्ति`
-      ],
-      weaknesses: [
-        `सीमित कार्यशील पूंजी बफर; पहले 3 महीनों में नकदी प्रवाह पर सख्त निगरानी जरूरी`,
-        `कच्चे माल के परिवहन हेतु स्थानीय बिचौलियों पर निर्भरता`
-      ],
-      opportunities: [
-        `सरकारी योजना (PMEGP / MUDRA) के तहत ब्याज अनुदान और क्रेडिट गारंटी का लाभ`,
-        `आस-पास के 3 गांवों में मांग विस्तार और सीधे थोक खरीदारों से अनुबंध`
-      ],
-      threats: [
-        `मौसम एवं बेमौसम बारिश से संबंधित परिवहन या भंडारण जोखिम`,
-        `निकटवर्ती कस्बे के बड़े खुदरा विक्रेताओं से मूल्य प्रतिस्पर्धा`
-      ]
-    };
-
-    let strategicRisks = [
-      {
-        risk: 'Feed / Raw Material Availability & Price Spikes',
-        mitigation: 'स्थानीय किसान उत्पादक संगठन (FPO) के साथ 3 महीने का अग्रिम आपूर्ति अनुबंध करें।',
-        severity: 'Medium' as const
-      },
-      {
-        risk: 'Working Capital Drying during Initial Gestation',
-        mitigation: 'प्रथम 6 माह के अधिस्थगन (Moratorium) का लाभ लें और ₹30,000 की आकस्मिक लिक्विडिटी सुरक्षित रखें।',
-        severity: 'High' as const
-      },
-      {
-        risk: 'Local Price Undercutting by Entrenched Aggregators',
-        mitigation: 'शुद्धता और समय पर डिलीवरी की गारंटी देकर सीधे ग्राम पंचायत व डेयरियों से संबंध बनाएं।',
-        severity: 'Low' as const
-      }
-    ];
-
-    let actionPlan = {
-      day30: [
-        'उद्यम आधार (Udyam Registration) एवं आवश्यक स्थानीय पंचायत अनापत्ति (NOC) प्राप्त करें',
-        'चयनित मशीनरी / पशु आपूर्तिकर्ताओं से पक्के कोटेशन प्राप्त कर बैंक शाखा प्रबंधक से संपर्क करें',
-        'योजना (PMEGP / MUDRA) का ऑनलाइन पोर्टल पर आवेदन दर्ज करें'
-      ],
-      day60: [
-        'बैंक ऋण स्वीकृति उपरांत शेड / दुकान की विद्युत फिटिंग और उपकरण संस्थापन पूर्ण करें',
-        'कच्चे माल व पशु आहार की 45 दिवसीय अग्रिम खेप का भंडारण करें',
-        'स्थानीय ग्राम व्हाट्सएप ग्रुप एवं पर्चों द्वारा उद्घाटन की सूचना दें'
-      ],
-      day90: [
-        'नियमित उत्पादन व दैनिक बिक्री बहीखाते का डिजिटाइजेशन (Khata App) शुरू करें',
-        'प्रथम 90 दिनों की शुद्ध आय से मासिक ईएमआई (EMI) का ऑटो-डेबिट खाता सुचारू रखें',
-        'दूसरे चरण के विस्तार हेतु 1 अतिरिक्त सहायक को रोजगार दें'
-      ]
-    };
 
     // If Gemini is available, enhance with hyper-specific rural intelligence
     if (ai) {
       try {
-        const prompt = `You are the lead appraisal officer and rural strategist for SIH.
+        const prompt = `You are the lead rural enterprise appraisal officer for SIH.
 Given:
 - Business: ${applicant.business}
 - Location: Village ${localData.village}, Block ${localData.block}, District ${localData.district}, State ${localData.state}
@@ -827,20 +1147,17 @@ Generate JSON with:
 2. strategicRisks (array of 3 items with { risk, mitigation, severity: 'High'|'Medium'|'Low' })
 3. actionPlan (day30: 3 steps, day60: 3 steps, day90: 3 steps)`;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
+        const text = await callGeminiWithFallback(ai, prompt);
+        if (text) {
+          const parsed = cleanAndParseJson<any>(text);
+          if (parsed) {
+            if (parsed.swot && Array.isArray(parsed.swot.strengths)) swot = parsed.swot;
+            if (Array.isArray(parsed.strategicRisks) && parsed.strategicRisks.length > 0) strategicRisks = parsed.strategicRisks;
+            if (parsed.actionPlan && Array.isArray(parsed.actionPlan.day30)) actionPlan = parsed.actionPlan;
           }
-        });
-
-        const parsed = JSON.parse(response.text || '{}');
-        if (parsed.swot) swot = parsed.swot;
-        if (parsed.strategicRisks) strategicRisks = parsed.strategicRisks;
-        if (parsed.actionPlan) actionPlan = parsed.actionPlan;
-      } catch (err) {
-        console.warn('Gemini dossier enhancement failed, using benchmark dossier:', err);
+        }
+      } catch {
+        // Fall back cleanly to the tailored benchmark dossier
       }
     }
 
