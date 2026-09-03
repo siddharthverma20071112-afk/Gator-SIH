@@ -74,7 +74,15 @@ Over **65% of rural micro-enterprise loan applications in India face rejection o
 - Real-time Speech-to-Text (`webkitSpeechRecognition`) and Speech Synthesis (`SpeechSynthesisUtterance`).
 - Multi-turn fact gathering with conversational confirmations and smart field prompting.
 
-### 2. 🗺️ Hyper-Local Ground Truth Data
+### 2. 🗺️ Google Maps Enterprise Location Pinpointing & Ground Truth Data
+- **Interactive Google Maps Pinpointer**: Search any rural village or district, drag the marker directly to pinpoint the planned enterprise site, or use geolocation.
+- **Reverse Geocoding Proxy**: Resolves precise village, block, district, state, and pincode coordinates via `/api/maps/reverse-geocode` and `/api/maps/geocode`.
+- **Rural Infrastructure Proximity Engine**: Computes distance to key operational hubs:
+  - 🌾 *Nearest Agricultural Mandi (APMC)* for raw material sourcing and wholesale liquidation.
+  - 🏦 *Nearest Public Sector Bank / Gramin Bank Branch* for loan disbursement and subsidy processing.
+  - 🛣️ *State/National Highway Connectivity* for all-weather freight logistics.
+  - ⚡ *3-Phase Grid Substation* for industrial power stability.
+- **Graceful Multi-Tier Fallback**: Automatically switches to an interactive Canvas Map mode with simulated satellite and infrastructure radiuses when running in restricted environments or without an active API key.
 - **Census 2011 & data.gov.in**: Village demographics, household purchasing power proxies, and road accessibility.
 - **OpenStreetMap (OSM)**: 5km radius point-of-interest (POI) analysis to calculate competitor saturation.
 - **AGMARKNET Real-time Mandi Spreads**: Farmgate wholesale prices vs. consumer retail rates to calculate gross profit margins.
@@ -127,6 +135,7 @@ Unlike generic LLM text generators, GraminSetu AI computes all financial figures
 | Domain | Technologies |
 | :--- | :--- |
 | **Frontend UI** | React 19, TypeScript, Tailwind CSS v4, Lucide Icons, Recharts |
+| **Geospatial & Maps** | Google Maps Platform, `@vis.gl/react-google-maps`, AdvancedMarker, Geocoding API |
 | **Animation & Motion** | Motion (`motion/react`) |
 | **Backend API** | Node.js, Express 4.21, `tsx` (runtime TypeScript) |
 | **Artificial Intelligence** | `@google/genai` (Gemini 3.8 Flash, Gemini 3.1 Flash-Lite fallback) |
@@ -141,6 +150,7 @@ Unlike generic LLM text generators, GraminSetu AI computes all financial figures
 - **Node.js**: v18.0 or higher
 - **npm** or **bun**
 - **Gemini API Key**: Obtainable from [Google AI Studio](https://aistudio.google.com/)
+- *(Optional)* **Google Maps API Key**: For live satellite tiles and real-time geocoding (built-in interactive fallback mode included)
 
 ### 1. Clone & Install Dependencies
 ```bash
@@ -153,6 +163,7 @@ npm install
 Create a `.env` file in the project root:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
+VITE_GOOGLE_MAPS_API_KEY=your_maps_key_optional
 PORT=3000
 ```
 
@@ -214,6 +225,12 @@ Generates the comprehensive appraisal dossier, SWOT matrix, and loan parameters.
 // Request: { applicant, localData, feasibility, finance, schemes }
 // Response: Returns complete BusinessDossier object with DSCR, SWOT, and WhatsApp digest.
 ```
+
+### `GET /api/maps/reverse-geocode?lat={latitude}&lng={longitude}`
+Reverse geocodes latitude and longitude coordinates into administrative village, block, district, state, and formatted postal address with rural regional fallback.
+
+### `GET /api/maps/geocode?address={query}`
+Geocodes rural addresses, village names, and APMC markets into geographic latitude and longitude coordinates.
 
 ### `GET /api/health`
 Health check endpoint returning system status and timestamp.

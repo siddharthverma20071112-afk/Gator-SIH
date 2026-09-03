@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -284,12 +285,182 @@ Analyze this input, update extracted facts, decide what missing fields remain, a
 });
 
 // ----------------------------------------------------
+// GOOGLE MAPS PLATFORM PROXY & GEOCODING MODULE
+// ----------------------------------------------------
+app.post('/api/maps/reverse-geocode', async (req, res) => {
+  const { lat, lng } = req.body;
+  if (typeof lat !== 'number' || typeof lng !== 'number') {
+    return res.status(400).json({ error: 'Valid numerical latitude and longitude are required' });
+  }
+
+  const apiKey = (process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCqjHAgcAp0PwiofeT6Bl0Nl6DXKvk_rfs').trim();
+  if (apiKey && apiKey !== 'MY_GOOGLE_MAPS_API_KEY') {
+    try {
+      const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+      const response = await fetch(gUrl);
+      const data: any = await response.json();
+
+      if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+        const topResult = data.results[0];
+        let village = '';
+        let block = '';
+        let district = '';
+        let state = '';
+        let postalCode = '';
+
+        for (const comp of topResult.address_components || []) {
+          const types: string[] = comp.types || [];
+          if (types.includes('sublocality') || types.includes('locality') || types.includes('neighborhood')) {
+            if (!village) village = comp.long_name;
+          }
+          if (types.includes('administrative_area_level_3')) {
+            block = comp.long_name;
+          }
+          if (types.includes('administrative_area_level_2')) {
+            district = comp.long_name;
+          }
+          if (types.includes('administrative_area_level_1')) {
+            state = comp.long_name;
+          }
+          if (types.includes('postal_code')) {
+            postalCode = comp.long_name;
+          }
+        }
+
+        return res.json({
+          formattedAddress: topResult.formatted_address,
+          village: village || block || district || 'Rural Enterprise Location',
+          block: block || district || 'Block Center',
+          district: district || 'Rural District',
+          state: state || 'India',
+          postalCode,
+          latitude: lat,
+          longitude: lng,
+          isLiveGeocoded: true
+        });
+      }
+    } catch (e) {
+      console.warn('Google Geocoding API proxy error, falling back:', e);
+    }
+  }
+
+  // Graceful fallback for demo/offline or before API key entered
+  const fallback = resolveRuralFallbackCoordinates(lat, lng);
+  res.json(fallback);
+});
+
+app.post('/api/maps/geocode', async (req, res) => {
+  const { query } = req.body;
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ error: 'Search query string is required' });
+  }
+
+  const apiKey = (process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyCqjHAgcAp0PwiofeT6Bl0Nl6DXKvk_rfs').trim();
+  if (apiKey && apiKey !== 'MY_GOOGLE_MAPS_API_KEY') {
+    try {
+      const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&region=in&key=${apiKey}`;
+      const response = await fetch(gUrl);
+      const data: any = await response.json();
+      if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+        const top = data.results[0];
+        const lat = top.geometry?.location?.lat || 26.5888;
+        const lng = top.geometry?.location?.lng || 81.3857;
+        return res.json({
+          formattedAddress: top.formatted_address,
+          latitude: lat,
+          longitude: lng,
+          isLiveGeocoded: true
+        });
+      }
+    } catch (e) {
+      console.warn('Google Geocoding text search error:', e);
+    }
+  }
+
+  // Fallback preset matches
+  const q = query.toLowerCase();
+  if (q.includes('haidergarh') || q.includes('barabanki')) {
+    return res.json({ formattedAddress: 'Haidergarh, Barabanki, Uttar Pradesh 225126', latitude: 26.5888, longitude: 81.3857, isLiveGeocoded: false });
+  } else if (q.includes('benipatti') || q.includes('madhubani')) {
+    return res.json({ formattedAddress: 'Benipatti, Madhubani, Bihar 847223', latitude: 26.4716, longitude: 85.9221, isLiveGeocoded: false });
+  } else if (q.includes('anand') || q.includes('amul')) {
+    return res.json({ formattedAddress: 'Anand District, Gujarat 388001', latitude: 22.5645, longitude: 72.9289, isLiveGeocoded: false });
+  } else if (q.includes('salem') || q.includes('omalur')) {
+    return res.json({ formattedAddress: 'Omalur, Salem, Tamil Nadu 636455', latitude: 11.7456, longitude: 78.0412, isLiveGeocoded: false });
+  } else if (q.includes('tijara') || q.includes('alwar')) {
+    return res.json({ formattedAddress: 'Tijara, Alwar, Rajasthan 301411', latitude: 27.9332, longitude: 76.8524, isLiveGeocoded: false });
+  } else if (q.includes('dindori') || q.includes('nashik')) {
+    return res.json({ formattedAddress: 'Dindori, Nashik, Maharashtra 422202', latitude: 20.2039, longitude: 73.8329, isLiveGeocoded: false });
+  }
+
+  res.json({
+    formattedAddress: `${query}, India`,
+    latitude: 26.5888,
+    longitude: 81.3857,
+    isLiveGeocoded: false
+  });
+});
+
+function resolveRuralFallbackCoordinates(lat: number, lng: number) {
+  // Nearest cluster matcher
+  const clusters = [
+    { name: 'Haidergarh', block: 'Haidergarh', district: 'Barabanki', state: 'Uttar Pradesh', lat: 26.5888, lng: 81.3857, address: 'Haidergarh Rural Zone, Barabanki, Uttar Pradesh' },
+    { name: 'Benipatti', block: 'Benipatti', district: 'Madhubani', state: 'Bihar', lat: 26.4716, lng: 85.9221, address: 'Benipatti Market, Madhubani, Bihar' },
+    { name: 'Chikodi', block: 'Chikodi', district: 'Belagavi', state: 'Karnataka', lat: 16.4312, lng: 74.5982, address: 'Chikodi Taluk, Belagavi, Karnataka' },
+    { name: 'Tijara', block: 'Tijara', district: 'Alwar', state: 'Rajasthan', lat: 27.9332, lng: 76.8524, address: 'Tijara Commercial Point, Alwar, Rajasthan' },
+    { name: 'Dindori', block: 'Dindori', district: 'Nashik', state: 'Maharashtra', lat: 20.2039, lng: 73.8329, address: 'Dindori Agro Hub, Nashik, Maharashtra' },
+    { name: 'Anand', block: 'Anand', district: 'Anand', state: 'Gujarat', lat: 22.5645, lng: 72.9289, address: 'Milk Cooperative Zone, Anand, Gujarat' },
+    { name: 'Omalur', block: 'Omalur', district: 'Salem', state: 'Tamil Nadu', lat: 11.7456, lng: 78.0412, address: 'Omalur Rural Junction, Salem, Tamil Nadu' }
+  ];
+
+  let closest = clusters[0];
+  let minDistance = Infinity;
+
+  for (const c of clusters) {
+    const d = Math.hypot(lat - c.lat, lng - c.lng);
+    if (d < minDistance) {
+      minDistance = d;
+      closest = c;
+    }
+  }
+
+  return {
+    formattedAddress: `${closest.address} (${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E)`,
+    village: closest.name,
+    block: closest.block,
+    district: closest.district,
+    state: closest.state,
+    latitude: lat,
+    longitude: lng,
+    isLiveGeocoded: false
+  };
+}
+
+// ----------------------------------------------------
 // MODULE 2: Data Engine (Census, OSM, Mandi, IMD)
 // ----------------------------------------------------
 app.post('/api/data-engine/fetch', (req, res) => {
-  const { village = 'Haidergarh', block = 'Haidergarh', district = 'Barabanki', state = 'Uttar Pradesh', businessType = 'dairy' } = req.body;
+  const {
+    village = 'Haidergarh',
+    block = 'Haidergarh',
+    district = 'Barabanki',
+    state = 'Uttar Pradesh',
+    businessType = 'dairy',
+    latitude,
+    longitude,
+    formattedAddress
+  } = req.body;
 
-  const data = generateLocalData(village, block, district, state, businessType as BusinessType);
+  const data = generateLocalData(
+    village,
+    block,
+    district,
+    state,
+    businessType as BusinessType,
+    latitude,
+    longitude,
+    formattedAddress
+  );
   res.json(data);
 });
 
@@ -298,7 +469,10 @@ function generateLocalData(
   block: string,
   district: string,
   state: string,
-  businessType: BusinessType
+  businessType: BusinessType,
+  latitude?: number,
+  longitude?: number,
+  formattedAddress?: string
 ): LocalDataEngineResult {
   // Deterministic local data engine with realistic rural data
   const basePop = 14000 + (Math.abs(hashString(village + district)) % 15000);
@@ -381,6 +555,9 @@ function generateLocalData(
     block,
     district,
     state,
+    latitude: latitude ?? (26.5888 + (Math.abs(hashString(village)) % 50) * 0.01),
+    longitude: longitude ?? (81.3857 + (Math.abs(hashString(district)) % 50) * 0.01),
+    formattedAddress: formattedAddress || `${village}, ${block}, ${district}, ${state}`,
     population: basePop,
     households: baseHouseholds,
     competitorsCount,

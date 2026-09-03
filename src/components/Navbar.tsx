@@ -1,6 +1,7 @@
 import React from 'react';
 import { 
   PhoneCall, 
+  MapPin,
   BarChart3, 
   MessageSquare, 
   FileText, 
@@ -10,10 +11,11 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { SAMPLE_PRESETS } from '../data/samplePresets';
+import { BrandLogo } from './BrandLogo';
 
 interface NavbarProps {
-  activeTab: 'call' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier';
-  setActiveTab: (tab: 'call' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier') => void;
+  activeTab: 'call' | 'map' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier';
+  setActiveTab: (tab: 'call' | 'map' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier') => void;
   onSelectPreset: (presetId: string) => void;
   isEvaluating: boolean;
 }
@@ -51,9 +53,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16 gap-4">
           {/* Logo & Brand */}
           <div className="flex items-center gap-3 shrink-0">
-            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-xs border border-slate-800">
-              <Building2 className="w-5 h-5 text-indigo-400" />
-            </div>
+            <BrandLogo size="md" isLive={isEvaluating} />
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold tracking-tight text-slate-900 font-['Space_Grotesk']">
@@ -106,6 +106,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <PhoneCall className="w-3.5 h-3.5" />
               <span>Voice AI Call</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('map')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'map'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Location Map</span>
             </button>
 
             <button

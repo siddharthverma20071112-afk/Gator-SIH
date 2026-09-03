@@ -7,6 +7,7 @@ import { SchemeCard } from './components/SchemeCard';
 import { WhatsAppSimulator } from './components/WhatsAppSimulator';
 import { AdminAuditDashboard } from './components/AdminAuditDashboard';
 import { DossierModal } from './components/DossierModal';
+import { EnterpriseLocationMap } from './components/EnterpriseLocationMap';
 import { SAMPLE_PRESETS } from './data/samplePresets';
 import { 
   ExtractedFacts, 
@@ -21,6 +22,7 @@ import {
   Sparkles, 
   ArrowRight, 
   PhoneCall, 
+  MapPin,
   BarChart3, 
   MessageSquare, 
   FileText, 
@@ -32,7 +34,7 @@ import {
 
 export default function App() {
   // Navigation active tab
-  const [activeTab, setActiveTab] = useState<'call' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier'>('call');
+  const [activeTab, setActiveTab] = useState<'call' | 'map' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier'>('call');
 
   // Core Pipeline State initialized with default Barabanki Dairy preset
   const defaultPreset = SAMPLE_PRESETS[0];
@@ -292,7 +294,10 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
           block: facts.block || 'Haidergarh',
           district: facts.district || 'Barabanki',
           state: facts.state || 'Uttar Pradesh',
-          businessType: bType
+          businessType: bType,
+          latitude: facts.latitude,
+          longitude: facts.longitude,
+          formattedAddress: facts.formattedAddress
         })
       });
       const localDataFetched: LocalDataEngineResult = await dataRes.json();
@@ -420,6 +425,30 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
     }
   };
 
+  // Handler when user selects or pinpoints a location on Google Maps
+  const handleLocationSelect = async (loc: {
+    village: string;
+    block: string;
+    district: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+    formattedAddress: string;
+  }) => {
+    const updatedFacts: ExtractedFacts = {
+      ...currentFacts,
+      village: loc.village,
+      block: loc.block,
+      district: loc.district,
+      state: loc.state,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      formattedAddress: loc.formattedAddress
+    };
+    setCurrentFacts(updatedFacts);
+    await runFullPipeline(updatedFacts);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-['Plus_Jakarta_Sans']">
       {/* Top Header */}
@@ -438,13 +467,21 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
             <span className="font-semibold text-slate-800 flex items-center gap-2 font-['Space_Grotesk'] text-xs whitespace-nowrap">
               <span className="px-2 py-0.5 bg-slate-100 rounded-md border border-slate-200/60 text-slate-700">📞 Villager Calls</span>
               <span className="text-slate-300">→</span>
-              <span className="px-2 py-0.5 bg-indigo-50 rounded-md border border-indigo-200/60 text-indigo-700">🤖 Voice AI (Hindi)</span>
+              <span className="px-2 py-0.5 bg-indigo-50 rounded-md border border-indigo-200/60 text-indigo-700">🤖 Voice AI</span>
               <span className="text-slate-300">→</span>
-              <span className="px-2 py-0.5 bg-sky-50 rounded-md border border-sky-200/60 text-sky-700">📊 Local Data</span>
+              <button
+                onClick={() => setActiveTab('map')}
+                className="px-2 py-0.5 bg-sky-50 hover:bg-sky-100 rounded-md border border-sky-200/60 text-sky-700 font-semibold cursor-pointer transition-colors"
+                title="Google Maps Enterprise Pinpointer"
+              >
+                🗺️ Location Map
+              </button>
               <span className="text-slate-300">→</span>
-              <span className="px-2 py-0.5 bg-violet-50 rounded-md border border-violet-200/60 text-violet-700">⚖️ Feasibility Engine</span>
+              <span className="px-2 py-0.5 bg-slate-50 rounded-md border border-slate-200/60 text-slate-700">📊 Local Data</span>
               <span className="text-slate-300">→</span>
-              <span className="px-2 py-0.5 bg-amber-50 rounded-md border border-amber-200/60 text-amber-700">💰 Loan Eligibility</span>
+              <span className="px-2 py-0.5 bg-violet-50 rounded-md border border-violet-200/60 text-violet-700">⚖️ Feasibility</span>
+              <span className="text-slate-300">→</span>
+              <span className="px-2 py-0.5 bg-amber-50 rounded-md border border-amber-200/60 text-amber-700">💰 Loan Appraisal</span>
               <span className="text-slate-300">→</span>
               <span className="px-2 py-0.5 bg-emerald-50 rounded-md border border-emerald-200/60 text-emerald-700 font-bold">📱 WhatsApp Report</span>
             </span>
@@ -488,6 +525,7 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
               onPipelineTrigger={runFullPipeline}
               isProcessingPipeline={isProcessingPipeline}
               onViewReport={() => setActiveTab('whatsapp')}
+              onOpenMap={() => setActiveTab('map')}
             />
 
             {/* Quick preview of Feasibility and WhatsApp under the call */}
@@ -510,18 +548,32 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
                 feasibility={feasibility}
                 localData={localData}
                 businessType={currentFacts.business || 'dairy'}
+                onOpenMap={() => setActiveTab('map')}
               />
             </div>
           </div>
         )}
 
-        {/* TAB 2: Feasibility & Finance Engine */}
+        {/* TAB 2: Google Maps Location Pinpointer */}
+        {activeTab === 'map' && (
+          <div className="space-y-6">
+            <EnterpriseLocationMap
+              currentFacts={currentFacts}
+              localData={localData}
+              onLocationSelect={handleLocationSelect}
+              onNavigateToTab={setActiveTab}
+            />
+          </div>
+        )}
+
+        {/* TAB 3: Feasibility & Finance Engine */}
         {activeTab === 'feasibility' && (
           <div className="space-y-6">
             <FeasibilityMeter
               feasibility={feasibility}
               localData={localData}
               businessType={currentFacts.business || 'dairy'}
+              onOpenMap={() => setActiveTab('map')}
             />
 
             <FinanceCalculator

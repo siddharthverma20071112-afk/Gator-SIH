@@ -14,6 +14,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { BusinessDossier } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface DossierModalProps {
   dossier: BusinessDossier;
@@ -66,7 +67,7 @@ export const DossierModal: React.FC<DossierModalProps> = ({
           <div className="border-b border-slate-200 pb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <Building2 className="w-6 h-6 text-indigo-600" />
+                <BrandLogo size="sm" />
                 <span className="text-xl font-bold tracking-tight text-slate-900 font-['Space_Grotesk']">
                   ग्रामीण सेतु AI (GraminSetu)
                 </span>

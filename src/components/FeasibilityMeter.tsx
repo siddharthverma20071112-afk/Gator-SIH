@@ -29,12 +29,14 @@ interface FeasibilityMeterProps {
   feasibility: FeasibilityScores;
   localData: LocalDataEngineResult;
   businessType: BusinessType;
+  onOpenMap?: () => void;
 }
 
 export const FeasibilityMeter: React.FC<FeasibilityMeterProps> = ({
   feasibility,
   localData,
-  businessType
+  businessType,
+  onOpenMap
 }) => {
   const scoreData = [
     { name: 'Demand (मांग)', score: feasibility.demandScore, weight: '28%', color: '#10B981', desc: 'उपभोक्ता संख्या व क्रय शक्ति' },
@@ -218,7 +220,7 @@ export const FeasibilityMeter: React.FC<FeasibilityMeterProps> = ({
 
       {/* MODULE 2: Local Data Engine Feed (Census, OSM, Mandi, Weather) */}
       <div className="bg-white rounded-2xl p-6 shadow-xs border border-slate-200/80">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider bg-sky-50 text-sky-700 border border-sky-200/80 px-2 py-0.5 rounded-md">
               Module 2: Data Engine
@@ -229,6 +231,24 @@ export const FeasibilityMeter: React.FC<FeasibilityMeterProps> = ({
             <p className="text-xs text-slate-500">
               Geographic & market parameters fetched for: <strong className="text-slate-800">{localData.village}</strong> (Block: {localData.block}, Dist: {localData.district}, {localData.state})
             </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {localData.latitude && localData.longitude && (
+              <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-mono">
+                📍 {localData.latitude.toFixed(4)}, {localData.longitude.toFixed(4)}
+              </span>
+            )}
+            {onOpenMap && (
+              <button
+                onClick={onOpenMap}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                title="Google Maps पर देखें और स्थान बदलें"
+              >
+                <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Open in Map</span>
+              </button>
+            )}
           </div>
         </div>
 

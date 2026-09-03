@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ExtractedFacts, ChatMessage, BusinessType } from '../types';
 import { SAMPLE_PRESETS, PresetDemo } from '../data/samplePresets';
+import { BrandLogo } from './BrandLogo';
 
 interface VoiceCallSimulatorProps {
   currentFacts: ExtractedFacts;
@@ -30,6 +31,7 @@ interface VoiceCallSimulatorProps {
   onPipelineTrigger: (facts: ExtractedFacts) => Promise<void>;
   isProcessingPipeline: boolean;
   onViewReport: () => void;
+  onOpenMap?: () => void;
 }
 
 export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
@@ -37,7 +39,8 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
   setCurrentFacts,
   onPipelineTrigger,
   isProcessingPipeline,
-  onViewReport
+  onViewReport,
+  onOpenMap
 }) => {
   const [callActive, setCallActive] = useState<boolean>(false);
   const [callDuration, setCallDuration] = useState<number>(0);
@@ -242,9 +245,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
         {/* Mobile Header / Status */}
         <div className="bg-slate-900 text-white p-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-indigo-400 font-bold shadow-2xs">
-              <Bot className="w-5 h-5" />
-            </div>
+            <BrandLogo size="md" isLive={callActive} />
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm sm:text-base tracking-tight text-white">
@@ -313,9 +314,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
               className={`flex gap-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {msg.sender === 'ai' && (
-                <div className="w-7 h-7 rounded-xl bg-slate-900 text-indigo-400 flex items-center justify-center text-xs shrink-0 mt-1 shadow-2xs border border-slate-800">
-                  <Bot className="w-4 h-4" />
-                </div>
+                <BrandLogo size="sm" className="mt-1" />
               )}
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm shadow-2xs ${
@@ -492,9 +491,22 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
                     {field.label}
                   </span>
                 </div>
-                <span className="font-semibold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200/80 shadow-2xs">
-                  {field.val || 'प्रतीक्षारत (Pending)'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200/80 shadow-2xs">
+                    {field.val || 'प्रतीक्षारत (Pending)'}
+                  </span>
+                  {field.key === 'location' && onOpenMap && (
+                    <button
+                      type="button"
+                      onClick={onOpenMap}
+                      className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/90 rounded-md font-semibold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      title="Google Maps पर सटीक स्थान पिन करें"
+                    >
+                      <MapPin className="w-3 h-3 text-indigo-600" />
+                      <span>Pinpoint</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

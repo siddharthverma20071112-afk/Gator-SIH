@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { BusinessDossier } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface WhatsAppSimulatorProps {
   dossier: BusinessDossier;
@@ -51,9 +52,7 @@ export const WhatsAppSimulator: React.FC<WhatsAppSimulatorProps> = ({
           {/* WhatsApp Header */}
           <div className="bg-[#075E54] text-white p-3 flex items-center justify-between shrink-0 shadow-sm">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-[#075E54] font-bold text-sm shadow-xs">
-                🌾
-              </div>
+              <BrandLogo size="sm" />
               <div>
                 <div className="flex items-center gap-1.5">
                   <h4 className="font-bold text-xs sm:text-sm tracking-tight truncate max-w-[150px]">

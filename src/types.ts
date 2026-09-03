@@ -8,6 +8,10 @@ export interface ExtractedFacts {
   block?: string;
   district?: string;
   state?: string;
+  latitude?: number;
+  longitude?: number;
+  formattedAddress?: string;
+  landmark?: string;
   experienceYears?: number;
   hasLandOrShop?: boolean;
   electricityReliable?: boolean;
@@ -29,6 +33,9 @@ export interface LocalDataEngineResult {
   block: string;
   district: string;
   state: string;
+  latitude?: number;
+  longitude?: number;
+  formattedAddress?: string;
   population: number;
   households: number;
   competitorsCount: number;

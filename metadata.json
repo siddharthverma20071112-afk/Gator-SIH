@@ -1,6 +1,6 @@
 {
   "name": "GraminSetu AI - Rural Enterprise & Loan Feasibility Consultant",
-  "description": "Voice-first rural enterprise feasibility & loan appraisal engine powered by Gemini AI, real-time local data, and government scheme routing.",
-  "requestFramePermissions": ["microphone"],
+  "description": "Voice-first rural enterprise feasibility & loan appraisal engine powered by Gemini AI, Google Maps Platform location pinpointing, real-time local data, and government scheme routing.",
+  "requestFramePermissions": ["microphone", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
