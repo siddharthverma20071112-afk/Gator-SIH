@@ -13,18 +13,24 @@ import {
 import { SAMPLE_PRESETS } from '../data/samplePresets';
 import { BrandLogo } from './BrandLogo';
 
+export type Locale = 'hi' | 'en';
+
 interface NavbarProps {
   activeTab: 'call' | 'map' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier';
   setActiveTab: (tab: 'call' | 'map' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier') => void;
   onSelectPreset: (presetId: string) => void;
   isEvaluating: boolean;
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   onSelectPreset,
-  isEvaluating
+  isEvaluating,
+  locale,
+  setLocale
 }) => {
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
@@ -34,17 +40,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 font-semibold px-2 py-0.5 rounded-md text-[10px] tracking-wider uppercase">
             SIH 2024-2026
           </span>
-          <span className="text-slate-200 font-semibold">Rural Enterprise & Loan Feasibility Consultant</span>
+          <span className="text-slate-200 font-semibold">{locale === 'hi' ? 'ग्रामीण उद्यमिता और ऋण परामर्श' : 'Rural Enterprise & Loan Feasibility Consultant'}</span>
           <span className="hidden sm:inline text-slate-600">•</span>
           <span className="hidden sm:inline text-slate-400">Voice AI • Local Data Engine • Scheme Routing</span>
         </div>
         <div className="flex items-center gap-3 text-[11px]">
+          {/* Language Toggle */}
+          <div className="flex bg-slate-800 rounded-md p-0.5 border border-slate-700">
+            <button
+              onClick={() => setLocale('hi')}
+              className={`px-2 py-0.5 rounded-sm transition-colors cursor-pointer ${locale === 'hi' ? 'bg-slate-600 text-white font-semibold' : 'text-slate-400 hover:text-white'}`}
+            >
+              हिंदी
+            </button>
+            <button
+              onClick={() => setLocale('en')}
+              className={`px-2 py-0.5 rounded-sm transition-colors cursor-pointer ${locale === 'en' ? 'bg-slate-600 text-white font-semibold' : 'text-slate-400 hover:text-white'}`}
+            >
+              EN
+            </button>
+          </div>
           <div className="flex items-center gap-1.5 text-slate-300">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="font-medium text-emerald-400">Gemini 3.8 Flash Active</span>
+            <span className="font-medium text-emerald-400">Gemini Active</span>
           </div>
-          <span className="text-slate-700">|</span>
-          <span className="text-slate-300 font-mono">Helpline: 1800-889-SETU</span>
         </div>
       </div>
 

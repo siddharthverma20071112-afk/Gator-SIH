@@ -121,12 +121,20 @@ function getGeminiClient(): GoogleGenAI | null {
 // ----------------------------------------------------
 app.post('/api/voice/chat', async (req, res) => {
   try {
-    const { transcript, history = [], currentFacts = {}, language = 'hi' } = req.body;
+    const { transcript, history = [], currentFacts = {}, locale = 'hi' } = req.body;
 
     const ai = getGeminiClient();
+    
+    const langInstructions = locale === 'en' 
+      ? "Respond ENTIRELY in English. Keep it natural, warm, and helpful." 
+      : "Respond ENTIRELY in natural spoken Hindi/Hinglish.";
+
+    const completeMessage = locale === 'en'
+      ? "Great! All your information is recorded. Our data and feasibility engine is now crunching the local numbers for your area. Please wait 5 seconds, your report is being generated!"
+      : "बहुत बढ़िया! आपकी सारी जानकारी दर्ज हो चुकी है। अब हमारा डाटा और फिजिबिलिटी इंजन आपके क्षेत्र के आंकड़े जुटाकर रिपोर्ट तैयार कर रहा है। बस 5 सेकंड रुकिए, आपकी रिपोर्ट आ रही है।";
 
     const systemPrompt = `You are "GraminSetu AI" (ग्रामीण सेतु AI), an expert, empathetic rural enterprise consultant and micro-credit advisor for rural India (SIH competition).
-Your task is to have a voice conversation with a villager in natural spoken Hindi/Hinglish (or English if requested).
+Your task is to have a voice conversation with a villager. ${langInstructions}
 Your goal is to collect essential business information:
 1. Business Type (dairy, grocery, tailoring, mobile_repair, food_processing)
 2. Margin Capital (saving/own investment amount in Rupees)
@@ -136,17 +144,17 @@ Your goal is to collect essential business information:
 6. Electricity/Road infrastructure in their village
 
 RULES:
-- Be polite, encouraging, respectful ("आप", "भैया", "दीदी").
+- Be polite, encouraging, respectful.
 - If the user already provided information in the transcript or previous turns, DO NOT ask for it again.
 - Extract any recognized facts into the structured JSON output.
 - ONLY ask for 1 or 2 missing fields at a time to keep voice calls brief and simple.
-- If all key fields (Business, Capital, Village/District, Experience, Land) are collected or the user says "analysis karo", mark isComplete = true.
-- When isComplete is true, say encouragingly that analysis is ready: "बहुत बढ़िया! आपकी सारी जानकारी दर्ज हो चुकी है। अब हमारा डाटा और फिजिबिलिटी इंजन आपके क्षेत्र के आंकड़े जुटाकर रिपोर्ट तैयार कर रहा है। बस 5 सेकंड रुकिए, आपकी रिपोर्ट स्क्रीन और व्हाट्सएप पर आ रही है।"
+- If all key fields (Business, Capital, Village/District, Experience, Land) are collected or the user asks to evaluate, mark isComplete = true.
+- When isComplete is true, use this exact message or similar in the correct language: "${completeMessage}"
 
 Return JSON adhering strictly to:
 {
-  "replyText": "your spoken reply in natural warm Hindi/Hinglish",
-  "replyAudioText": "clean short phonetic version for text-to-speech",
+  "replyText": "your spoken reply in the requested language",
+  "replyAudioText": "clean short phonetic version for text-to-speech in the requested language",
   "extracted": {
     "business": "dairy | grocery | tailoring | mobile_repair | food_processing",
     "marginCapital": number or null,
@@ -1340,7 +1348,9 @@ Generate JSON with:
 
     // Format WhatsApp report strictly as requested in the prompt!
     const primaryScheme = schemes[0]?.name || 'PMEGP / Term Loan';
-    const whatsAppMessage = `📊 *ग्रामीण सेतु AI - व्यवसाय एवं ऋण व्यवहार्यता रिपोर्ट*
+    
+    const whatsAppMessage = locale === 'hi' 
+      ? `📊 *ग्रामीण सेतु AI - व्यवसाय एवं ऋण व्यवहार्यता रिपोर्ट*
 ━━━━━━━━━━━━━━━━━━━━
 🏢 *व्यवसाय (Business):* ${applicant.business?.toUpperCase() || 'DAIRY'}
 📍 *स्थान (Location):* ${localData.village}, ${localData.district}
@@ -1366,7 +1376,34 @@ ${schemes[0]?.subsidyAmount ? `🎁 *अनुदान (Subsidy):* ₹${(scheme
 📄 *पूर्ण बैंक फाइल एवं विश्लेषण डाउनलोड करें:*
 https://graminsetu.gov.in/dossier/${Date.now()}
 ━━━━━━━━━━━━━━━━━━━━
-_सशक्त गांव, समृद्ध भारत | Smart India Hackathon_`;
+_सशक्त गांव, समृद्ध भारत | Smart India Hackathon_`
+      : `📊 *Gramin Setu AI - Business & Loan Feasibility Report*
+━━━━━━━━━━━━━━━━━━━━
+🏢 *Business:* ${applicant.business?.toUpperCase() || 'DAIRY'}
+📍 *Location:* ${localData.village}, ${localData.district}
+━━━━━━━━━━━━━━━━━━━━
+📈 *Feasibility Score:* ${feasibility.overallScore} / 100 (${feasibility.category})
+🎯 *Confidence:* ${feasibility.confidencePercent}%
+━━━━━━━━━━━━━━━━━━━━
+💰 *Project Cost:* ₹${(finance.projectCost / 100000).toFixed(2)} Lakh
+💳 *Recommended Loan:* ₹${(finance.loanAmount / 100000).toFixed(2)} Lakh
+💵 *Monthly EMI:* ₹${finance.monthlyEmi.toLocaleString('en-IN')}/mo
+🏛️ *Eligible Scheme:* ${primaryScheme}
+${schemes[0]?.subsidyAmount ? `🎁 *Subsidy:* ₹${(schemes[0].subsidyAmount / 100000).toFixed(2)} Lakh (${schemes[0].subsidyPercentage}%)` : ''}
+━━━━━━━━━━━━━━━━━━━━
+⚠️ *Key Risks:*
+1. ${strategicRisks[0]?.risk || 'Seasonal raw material supply'}
+2. ${strategicRisks[1]?.risk || 'Local competition & price fluctuations'}
+
+✅ *Recommended Actions:*
+1. ${strategicRisks[0]?.mitigation || 'Contract with reliable supplier'}
+2. Establish advance customer and Panchayat contact at village level
+3. Apply for ${primaryScheme} with necessary documents
+
+📄 *Download Full Bank File & Analysis:*
+https://graminsetu.gov.in/dossier/${Date.now()}
+━━━━━━━━━━━━━━━━━━━━
+_Empowering Villages, Prosperous India | Smart India Hackathon_`;
 
     const appraisalSummary = `The project for establishment of ${applicant.business} by applicant ${applicant.applicantName || 'Entrepreneur'} at ${localData.village}, ${localData.district} has been evaluated using GraminSetu Multi-Factor Feasibility Engine. With a Debt Service Coverage Ratio (DSCR) of ${finance.dscrRatio}x, an overall feasibility index of ${feasibility.overallScore}/100, and a 90:10 debt-equity structure, the proposal represents a viable and bankable micro-credit proposition under ${primaryScheme}.`;
 

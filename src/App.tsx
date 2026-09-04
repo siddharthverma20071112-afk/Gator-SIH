@@ -32,7 +32,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+import { Locale } from './components/Navbar';
+
 export default function App() {
+  const [locale, setLocale] = useState<Locale>('hi');
   // Navigation active tab
   const [activeTab, setActiveTab] = useState<'call' | 'map' | 'feasibility' | 'finance' | 'whatsapp' | 'admin' | 'dossier'>('call');
 
@@ -352,7 +355,8 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
           localData: localDataFetched,
           feasibility: feasibilityCalculated,
           finance: financeCalculated,
-          schemes: schemesRouted
+          schemes: schemesRouted,
+          locale
         })
       });
       const compiledDossier: BusinessDossier = await dosRes.json();
@@ -457,6 +461,8 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
         setActiveTab={setActiveTab}
         onSelectPreset={handleSelectPreset}
         isEvaluating={isProcessingPipeline}
+        locale={locale}
+        setLocale={setLocale}
       />
 
       {/* Main Container */}
@@ -526,6 +532,7 @@ _सशक्त गांव, समृद्ध भारत | Smart India Hac
               isProcessingPipeline={isProcessingPipeline}
               onViewReport={() => setActiveTab('whatsapp')}
               onOpenMap={() => setActiveTab('map')}
+              locale={locale}
             />
 
             {/* Quick preview of Feasibility and WhatsApp under the call */}

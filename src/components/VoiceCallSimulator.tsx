@@ -24,6 +24,7 @@ import {
 import { ExtractedFacts, ChatMessage, BusinessType } from '../types';
 import { SAMPLE_PRESETS, PresetDemo } from '../data/samplePresets';
 import { BrandLogo } from './BrandLogo';
+import { Locale } from './Navbar';
 
 interface VoiceCallSimulatorProps {
   currentFacts: ExtractedFacts;
@@ -32,6 +33,7 @@ interface VoiceCallSimulatorProps {
   isProcessingPipeline: boolean;
   onViewReport: () => void;
   onOpenMap?: () => void;
+  locale: Locale;
 }
 
 export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
@@ -40,7 +42,8 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
   onPipelineTrigger,
   isProcessingPipeline,
   onViewReport,
-  onOpenMap
+  onOpenMap,
+  locale
 }) => {
   const [callActive, setCallActive] = useState<boolean>(false);
   const [callDuration, setCallDuration] = useState<number>(0);
@@ -53,8 +56,12 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
     {
       id: 'welcome-1',
       sender: 'ai',
-      text: 'नमस्ते! ग्रामीण सेतु हेल्पलाइन (1800-889-SETU) में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं और आपके पास कितनी जमा पूंजी है?',
-      audioText: 'नमस्ते! ग्रामीण सेतु हेल्पलाइन में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं?',
+      text: locale === 'hi' 
+        ? 'नमस्ते! ग्रामीण सेतु हेल्पलाइन (1800-889-SETU) में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं और आपके पास कितनी जमा पूंजी है?'
+        : 'Hello! Welcome to Gramin Setu Helpline. What kind of business would you like to start and how much initial capital do you have?',
+      audioText: locale === 'hi' 
+        ? 'नमस्ते! ग्रामीण सेतु हेल्पलाइन में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं?'
+        : 'Hello! Welcome to Gramin Setu Helpline. What kind of business would you like to start?',
       timestamp: 'Just now'
     }
   ]);
@@ -70,27 +77,58 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
     if (SpeechRecognition) {
       setRecognitionSupported(true);
       const rec = new SpeechRecognition();
-      rec.continuous = false;
+      rec.continuous = true;
       rec.interimResults = false;
-      rec.lang = 'hi-IN'; // Default to Hindi
+      rec.lang = locale === 'hi' ? 'hi-IN' : 'en-IN';
 
       rec.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        handleUserSpokenInput(transcript);
-        setIsListening(false);
+        const transcript = event.results[event.results.length - 1][0].transcript;
+        if (transcript.trim()) {
+          handleUserSpokenInput(transcript);
+        }
       };
 
-      rec.onerror = () => {
-        setIsListening(false);
+      rec.onerror = (event: any) => {
+        if (event.error !== 'no-speech') {
+          setIsListening(false);
+        }
       };
 
       rec.onend = () => {
-        setIsListening(false);
+        // Auto-restart if we are still supposed to be listening (simulates continuous call)
+        if (isListening && callActive) {
+          try {
+            rec.start();
+          } catch (e) {
+            setIsListening(false);
+          }
+        } else {
+          setIsListening(false);
+        }
       };
 
       recognitionRef.current = rec;
     }
-  }, []);
+  }, [locale, callActive]); // Re-initialize when language changes
+
+  // Update welcome message when locale changes
+  useEffect(() => {
+    if (!callActive && chatHistory.length === 1) {
+      setChatHistory([
+        {
+          id: 'welcome-1',
+          sender: 'ai',
+          text: locale === 'hi' 
+            ? 'नमस्ते! ग्रामीण सेतु हेल्पलाइन (1800-889-SETU) में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं और आपके पास कितनी जमा पूंजी है?'
+            : 'Hello! Welcome to Gramin Setu Helpline. What kind of business would you like to start and how much initial capital do you have?',
+          audioText: locale === 'hi' 
+            ? 'नमस्ते! ग्रामीण सेतु हेल्पलाइन में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं?'
+            : 'Hello! Welcome to Gramin Setu Helpline. What kind of business would you like to start?',
+          timestamp: 'Just now'
+        }
+      ]);
+    }
+  }, [locale]);
 
   // Call duration timer
   useEffect(() => {
@@ -124,7 +162,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'hi-IN';
+      utterance.lang = locale === 'hi' ? 'hi-IN' : 'en-IN';
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
@@ -135,7 +173,11 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
 
   const startCall = () => {
     setCallActive(true);
-    speakText('नमस्ते! ग्रामीण सेतु हेल्पलाइन में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं और आपके पास कितनी जमा पूंजी है?');
+    speakText(
+      locale === 'hi'
+        ? 'नमस्ते! ग्रामीण सेतु हेल्पलाइन में आपका स्वागत है। बताइए, आप कौन सा व्यवसाय शुरू करना चाहते हैं और आपके पास कितनी जमा पूंजी है?'
+        : 'Hello! Welcome to Gramin Setu Helpline. What kind of business would you like to start and how much initial capital do you have?'
+    );
   };
 
   const endCall = () => {
@@ -186,7 +228,8 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
         body: JSON.stringify({
           transcript: spokenText,
           history: chatHistory.map((m) => ({ role: m.sender, text: m.text })),
-          currentFacts
+          currentFacts,
+          locale
         })
       });
 
@@ -385,7 +428,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
                 className="flex items-center justify-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl font-semibold text-xs shadow-xs transition-all cursor-pointer w-full sm:w-auto"
               >
                 <Phone className="w-4 h-4" />
-                <span>कॉल शुरू करें (Start Call)</span>
+                <span>{locale === 'hi' ? 'कॉल शुरू करें (Start Call)' : 'Start Call'}</span>
               </button>
             ) : (
               <button
@@ -393,7 +436,7 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
                 className="flex items-center justify-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-98 text-white rounded-xl font-semibold text-xs shadow-xs transition-all cursor-pointer w-full sm:w-auto"
               >
                 <PhoneOff className="w-4 h-4" />
-                <span>समाप्त (End)</span>
+                <span>{locale === 'hi' ? 'समाप्त (End)' : 'End Call'}</span>
               </button>
             )}
 
@@ -429,7 +472,11 @@ export const VoiceCallSimulator: React.FC<VoiceCallSimulatorProps> = ({
               type="text"
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder={isListening ? '🎤 आपकी आवाज रिकॉर्ड हो रही है...' : 'हिंदी या अंग्रेजी में बोलें या टाइप करें...'}
+              placeholder={
+                isListening 
+                  ? (locale === 'hi' ? '🎤 आपकी आवाज रिकॉर्ड हो रही है...' : '🎤 Recording your voice...') 
+                  : (locale === 'hi' ? 'हिंदी या अंग्रेजी में बोलें या टाइप करें...' : 'Speak or type in English or Hindi...')
+              }
               className="flex-1 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden transition-all"
             />
             <button
